@@ -1,3 +1,5 @@
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -5,6 +7,55 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include "./wsh.h"
+
+void exitShell() {
+    exit(0);
+}
+
+void cd(char* argv[]){
+    int argc = 0;
+    char** arg = argv;
+    while (NULL != *arg) {
+        argc++;
+        arg++;
+    }
+
+    if (argc != 2) {
+        printf("Invald arguments passed to cd\n");
+        exit(1);
+    }
+
+    if (chdir(argv[1])) {
+        printf("Unable to change directories\n");
+        exit(1);
+    }
+}
+
+int builtin(char* command, char* argv[]) {
+    if (!strcmp(command, "exit")) {
+        exitShell();
+    }
+    else if (!strcmp(command, "bg"))
+    {
+        //bg(argv);
+    }
+    else if (!strcmp(command, "fg"))
+    {
+        //fg(argv);
+    }
+    else if (!strcmp(command, "jobs"))
+    {
+        //jobs(argv);
+    }
+    else if (!strcmp(command, "cd"))
+    {
+        cd(argv);
+    }
+    else {
+        return 0;
+    }
+    return 1;
+}
 
 int execute(char* command) {
     if (NULL == command) {
@@ -44,6 +95,11 @@ int execute(char* command) {
     // NULL terminate our argv arr of ptr
     *arg = NULL;
 
+    // Check if command is internally handled
+    if (builtin(argv[0], argv)) {
+        return 0;
+    }
+
     // Construct the path to the command we want to execute
     char *cmdpath = malloc(strlen(path) + strlen(argv[0]) + 1);
     if (NULL == cmdpath) {
@@ -60,9 +116,18 @@ int execute(char* command) {
         exit(1);
     }
 
-    int a = execvp(cmdpath, argv);
-    printf("a=%d\n", a);
-    printf("executing %s\n", cmdpath);
+    // Execute command
+    int isParent = fork();
+    if (isParent) {
+        waitpid(isParent, NULL, 0);
+    }
+    else {
+        if (-1 == execvp(cmdpath, argv)) {
+            printf("Execution failed for %s\n", cmdpath);
+            exit(1);
+        }
+        exit(0);
+    }
 
     // Free allocated mem
     free(cmdpath);

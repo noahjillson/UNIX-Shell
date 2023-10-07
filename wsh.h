@@ -1,3 +1,3 @@
-typedef int SHELL_MODE;
+typedef const int SHELL_MODE;
 SHELL_MODE INTERACTIVE = 0;
 SHELL_MODE BATCH = 1;
