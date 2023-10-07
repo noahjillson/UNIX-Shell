@@ -5,7 +5,8 @@
 #include "./wsh.h"
 
 int execute(char* command) {
-    printf("%s\n", command);
+    // use strsep() to split command by spaces
+    printf("%s", command);
     return 0;
 }
 
@@ -13,20 +14,24 @@ int listen(SHELL_MODE mode) {
     int len = 0;
     size_t cap = 256;
     char* line = NULL;
+    if (INTERACTIVE == mode) {
+        printf("wsh> ");
+    }
+
     // getline mallocs a new buffer for us and will realloc() as necessary to handle longer lines
     while (-1 != (len = getline(&line, &cap, stdin))) {
+        execute(line);
         if (INTERACTIVE == mode) {
             printf("wsh> ");
         }
-        execute(line);
     }
-    return 0;
+    exit(0);
 }
 
 int main(int argc, char** argv) {
     // interactive shell mode
     if (1 == argc) {
-        return listen(INTERACTIVE);
+        listen(INTERACTIVE);
     }
     // batch shell mode
     else if (2 == argc) {
@@ -38,9 +43,10 @@ int main(int argc, char** argv) {
 
         dup2(fd, 0);
         close(fd);
-        return listen(BATCH);
+        listen(BATCH);
     }
 
+    // Too many arguments passed exit 1
     printf("Invalid usage of %s with %d arguments.\n", argv[0], argc);
     exit(1);
 }
