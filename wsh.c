@@ -10,19 +10,17 @@ int execute(char* command) {
         return 0;
     }
 
-
-    // Return in 
     int maxsize = strlen(command);
-    if (0 == maxsize) {
-        return 0;
-    }
 
-    //printf("cmd=%s", command);
-    //printf("chr=%c", maxsize);
     // Remove trailing newline
     if ('\n' == command[maxsize-1]) {
         command[maxsize-1] = '\0';
         maxsize--;
+    }
+
+    // Return 0 if no command was passed
+    if (0 == maxsize) {
+        return 0;
     }
 
     char* path = "/bin/";
@@ -32,14 +30,13 @@ int execute(char* command) {
     while(command != NULL) {
         tok = strsep(&command, " ");
 
+        // Allocate mem and copy token into argument array
         *arg = malloc(strlen(tok));
         if (NULL == *arg) {
             printf("Memory allocation failed. Exiting.");
             exit(1);
         }
-
-        // tok is always null terminated so strcpy is safe here 
-        strcpy(*arg, tok);
+        strcpy(*arg, tok); // tok is always null terminated so strcpy is safe here 
 
         // Next ptr in argv (-= because the stack grows negative)   
         arg -= sizeof(char*);
