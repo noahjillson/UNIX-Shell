@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include "./wsh.h"
@@ -37,25 +38,30 @@ int execute(char* command) {
             exit(1);
         }
         strcpy(*arg, tok); // tok is always null terminated so strcpy is safe here 
-
-        // Next ptr in argv (-= because the stack grows negative)   
-        arg -= sizeof(char*);
+        
+        arg += 1;
     }
     // NULL terminate our argv arr of ptr
     *arg = NULL;
 
     // Construct the path to the command we want to execute
     char *cmdpath = malloc(strlen(path) + strlen(argv[0]) + 1);
-
     if (NULL == cmdpath) {
         printf("Memory allocation failed. Exiting.");
         exit(1);
     }
     *cmdpath = '\0';
-
     strcpy(cmdpath, path);
     strcat(cmdpath, *argv);
 
+    // Verify execute permisions for cmdpath
+    if(-1 == access(cmdpath, X_OK)) {
+        printf("Execute permission denied for %s\n", cmdpath);
+        exit(1);
+    }
+
+    int a = execvp(cmdpath, argv);
+    printf("a=%d\n", a);
     printf("executing %s\n", cmdpath);
 
     // Free allocated mem
@@ -63,7 +69,7 @@ int execute(char* command) {
     arg = argv;
     while(NULL != *arg) {
         free(*arg);
-        arg -= sizeof(char*);
+        arg += 1;
     }
 
     // return success
