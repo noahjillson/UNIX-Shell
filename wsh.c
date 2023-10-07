@@ -58,22 +58,31 @@ int builtin(char* command, char* argv[]) {
 }
 
 int execute(char* command) {
+    // Return 0 if NULL command was passed
     if (NULL == command) {
         return 0;
     }
 
+    // Return 0 if empty command was passed
     int maxsize = strlen(command);
-
-    // Remove trailing newline
-    if ('\n' == command[maxsize-1]) {
+    int bg = ('&' == command[maxsize-1]);
+    if (bg) {
         command[maxsize-1] = '\0';
         maxsize--;
     }
-
-    // Return 0 if no command was passed
     if (0 == maxsize) {
         return 0;
     }
+    // Remove trailing newline
+    // if ('\n' == command[maxsize-1]) {
+    //     command[maxsize-1] = '\0';
+    //     maxsize--;
+    // }
+
+    
+    
+
+
 
     char* path = "/bin/";
     char* argv[maxsize + 1]; // +1 allows for NULL terminated array
@@ -81,6 +90,10 @@ int execute(char* command) {
     char** arg = argv;
     while(command != NULL) {
         tok = strsep(&command, " ");
+
+        if(0 == strlen(tok)) {
+            continue;
+        }
 
         // Allocate mem and copy token into argument array
         *arg = malloc(strlen(tok));
@@ -110,6 +123,12 @@ int execute(char* command) {
     strcpy(cmdpath, path);
     strcat(cmdpath, *argv);
 
+    // Verify file existance for cmdpath
+    if(-1 == access(cmdpath, F_OK)) {
+        printf("File does not exist: %s\n", cmdpath);
+        return 0;
+    }
+
     // Verify execute permisions for cmdpath
     if(-1 == access(cmdpath, X_OK)) {
         printf("Execute permission denied for %s\n", cmdpath);
@@ -119,7 +138,10 @@ int execute(char* command) {
     // Execute command
     int isParent = fork();
     if (isParent) {
-        waitpid(isParent, NULL, 0);
+        // We should not wait if we are running a process with &
+        if(!bg){
+            waitpid(isParent, NULL, 0);
+        }
     }
     else {
         if (-1 == execvp(cmdpath, argv)) {
@@ -151,6 +173,12 @@ int listen(SHELL_MODE mode) {
 
     // getline mallocs a new buffer for us and will realloc() as necessary to handle longer lines
     while (-1 != (len = getline(&line, &cap, stdin))) {
+        // Remove trailing newline
+        if ('\n' == line[strlen(line)-1]) {
+            line[strlen(line)-1] = '\0';
+        }
+        
+        //execute line as a command and arguments
         execute(line);
         if (INTERACTIVE == mode) {
             printf("wsh> ");
