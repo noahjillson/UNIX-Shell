@@ -8,17 +8,39 @@
 #include <unistd.h>
 #include "./wsh.h"
 
-void exitShell() {
-    exit(0);
-}
+static struct JOB* jobList;
 
-void cd(char* argv[]){
+int getargc(char* argv[]) {
+    // Count arguments
     int argc = 0;
     char** arg = argv;
     while (NULL != *arg) {
         argc++;
         arg++;
     }
+
+    return argc;
+}
+
+void bg(char* argv[]) {
+    int argc = getargc(argv);
+    pid_t fgjob;
+
+    if (argc == 1) {
+        fgjob = tcgetpgrp(0);
+    }
+    if
+
+    exit(1);
+}
+
+void exitShell() {
+    exit(0);
+}
+
+void cd(char* argv[]){
+    // Count arguments
+    int argc = getargc(argv);
 
     if (argc != 2) {
         printf("Invald arguments passed to cd\n");
@@ -73,16 +95,16 @@ int execute(char* command) {
     if (0 == maxsize) {
         return 0;
     }
+
+    // if (maxsize > MAX_ARG_CNT) {
+    //     printf("\n");
+    //     return 0;
+    // }
     // Remove trailing newline
     // if ('\n' == command[maxsize-1]) {
     //     command[maxsize-1] = '\0';
     //     maxsize--;
     // }
-
-    
-    
-
-
 
     char* path = "/bin/";
     char* argv[maxsize + 1]; // +1 allows for NULL terminated array
@@ -144,7 +166,8 @@ int execute(char* command) {
         }
     }
     else {
-        if (-1 == execvp(cmdpath, argv)) {
+        // or cmdpath
+        if (-1 == execvp(argv[0], argv)) {
             printf("Execution failed for %s\n", cmdpath);
             exit(1);
         }
@@ -190,6 +213,8 @@ int listen(SHELL_MODE mode) {
 }
 
 int main(int argc, char** argv) {
+    jobList = NULL;
+
     // interactive shell mode
     if (1 == argc) {
         listen(INTERACTIVE);
