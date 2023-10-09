@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
+#include <signal.h>
 #include "./wsh.h"
 
 static struct JOB* jobList;
@@ -26,10 +27,11 @@ int getargc(char* argv[]) {
 
 void bg(char* argv[]) {
     int argc = getargc(argv);
-    pid_t fgjob;
+    //pid_t fgjob;
 
     if (argc == 1) {
-        fgjob = tcgetpgrp(0);
+        //fgjob = tcgetpgrp(0);
+
     }
     //if
 
@@ -122,7 +124,7 @@ int execute(char* command) {
         // Allocate mem and copy token into argument array
         *arg = malloc(strlen(tok));
         if (NULL == *arg) {
-            printf("Memory allocation failed. Exiting.");
+            printf("Memory allocation failed. Exiting.]n");
             exit(1);
         }
         strcpy(*arg, tok); // tok is always null terminated so strcpy is safe here 
@@ -140,7 +142,7 @@ int execute(char* command) {
     // Construct the path to the command we want to execute
     char *cmdpath = malloc(strlen(path) + strlen(argv[0]) + 1);
     if (NULL == cmdpath) {
-        printf("Memory allocation failed. Exiting.");
+        printf("Memory allocation failed. Exiting\n");
         exit(1);
     }
     *cmdpath = '\0';
@@ -166,41 +168,40 @@ int execute(char* command) {
         exit(1);
     }
     if (isParent) {
-        printf("Parent\n");
         // We should not wait if we are running a process with &
         if(!bg){
-            printf("CHILD is: %d\n", isParent);
-            setpgid(isParent, isParent);
-            int tcerno = tcsetpgrp(0, getpgid(isParent));
-            printf("NEW FG: %d\n", tcgetpgrp(STDIN_FILENO));
-            if (tcerno == -1) {
-                if (errno == EINVAL) {
-                    printf("An invalid value of pgid_id was specified.\n");
-                }
-                if (errno == EBADF) {
-                    printf("The fildes argument is not a valid file descriptor.\n");
-                }
-                if(errno == ENOTTY) {
-                    printf("The calling process does not have a controlling terminal, or the file represented by fildes is not the controlling terminal, or the controlling terminal is no longer associated with the session of the calling process.\n");
-                }
+            if (setpgid(isParent, isParent)) {
+                printf("Unable to set pgid of %d to %d.\n", isParent, isParent);
+                exit(1);
             }
-            waitpid(isParent, NULL, 0);
-            tcsetpgrp(STDIN_FILENO, getpid());
+
+            if (-1 == tcsetpgrp(shellfd, getpgid(isParent))) {
+                printf("Unable to bring pgid %d to the foreground.\n", isParent);
+                exit(1);
+            }
+
+            if (-1 == waitpid(isParent, NULL, 0)) {
+                printf("Error waiting for pid %d.\n", isParent);
+                exit(1);
+            }
+
+            printf("Child Exited current fg process is: %d\n", tcgetpgrp(shellfd));
+            tcsetpgrp(shellfd, getpid());
         }
     }
     else {
-        // or cmdpath
-        printf("Child\n");
+        
         if(!bg) {
-            setpgid(getpid(), getpid());
-            printf("FG is: %d\n", tcgetpgrp(0));
-            printf("PRE FG child pid: %d child pgid: %d\n", getpid(), getpgid(getpid()));
-            printf("child pid: %d child pgid: %d\n", getpid(), getpgid(getpid()));
+            //setpgid(getpid(), getpid());
+            // printf("FG is: %d\n", tcgetpgrp(0));
+            // printf("PRE FG child pid: %d child pgid: %d\n", getpid(), getpgid(getpid()));
+            // printf("child pid: %d child pgid: %d\n", getpid(), getpgid(getpid()));
         }
         else {
-            printf("BACKGROUNDED\n");
+            //printf("BACKGROUNDED\n");
         }
 
+        // or cmdpath
         if (-1 == execvp(argv[0], argv)) {
             printf("Execution failed for %s\n", cmdpath);
             exit(1);
@@ -220,18 +221,27 @@ int execute(char* command) {
     return 0;
 }
 
+void prompt(SHELL_MODE mode) {
+    if (INTERACTIVE == mode) {
+        printf("wsh> ");
+        fflush(stdout);
+        if (fflush(stdout)) {
+            printf("Failed to flush output buffer\n.");
+            exit(1);
+        }
+    }
+}
+
 int listen(SHELL_MODE mode) {
     int len = 0;
     size_t cap = 256;
     char* line = NULL;
-    if (INTERACTIVE == mode) {
-        printf("wsh> ");
-    }
+    prompt(mode);
 
     // getline mallocs a new buffer for us and will realloc() as necessary to handle longer lines
     while (-1 != (len = getline(&line, &cap, stdin))) {
-        printf("pid: %d, pgid: %d, psid %d\n", getpid(), getpgid(getpid()), getsid(getpid()));
-        printf("fgpgid: %d\n", tcgetpgrp(0));
+        //printf("pid: %d, pgid: %d, psid %d\n", getpid(), getpgid(getpid()), getsid(getpid()));
+        //printf("fgpgid: %d\n", tcgetpgrp(0));
         // Remove trailing newline
         if ('\n' == line[strlen(line)-1]) {
             line[strlen(line)-1] = '\0';
@@ -239,9 +249,7 @@ int listen(SHELL_MODE mode) {
         
         //execute line as a command and arguments
         execute(line);
-        if (INTERACTIVE == mode) {
-            printf("wsh> ");
-        }
+        prompt(mode);
     }
 
     free(line);
@@ -251,29 +259,35 @@ int listen(SHELL_MODE mode) {
 void sigtou_handler(int signo) {
     // Set shell to fg if it is not already the foreground process
     if (tcgetpgrp(shellfd) != getpid()) {
-        printf("running this code: %d\n", tcgetpgrp(shellfd));
+        //printf("running this code: %d\n", tcgetpgrp(shellfd));
         tcsetpgrp(shellfd, getpid());
     }
 }
-void myhndlr2(int signo) {
-    printf("STOP\n\n\n");
+void sigtstp_handler(int signo) {
+    //printf("STOP\n\n\n");
 }
 
 int main(int argc, char** argv) {
+    // Set signal handlers
+    signal(SIGTSTP, sigtstp_handler);
+    signal(SIGTTOU, SIG_IGN); // Initially ignore the SIGTTOU signal handler
+
     // Linked list of jobs started from the shell
     jobList = NULL;
 
+    // Get name of the controlling terminal
     char *shellname = ttyname(STDIN_FILENO);
     if (!shellname) {
         printf("Error getting controlling tty name.\n");
         exit(1);
     }
 
-    shellfd = open(shellname, O_RDWR); // fd associated to the controlling terminal
-    if (shellfd)
-
-    signal(SIGTSTP, myhndlr2);
-    signal(SIGTTOU, SIG_IGN);
+     // Get file descriptor associated to the controlling terminal
+    shellfd = open(shellname, O_RDWR); 
+    if (!shellfd) {
+        printf("Error obtaining file describtor of controlling tty.\n");
+        exit(1);
+    }
 
     printf("%s\n", ttyname(STDIN_FILENO));
 
