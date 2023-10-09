@@ -61,6 +61,21 @@ void addjob(pid_t pid, char **argv) {
     }
 }
 
+void prune() {
+    struct JOB *curr = jobList;
+    //struct JOB *prev = NULL;
+    
+    while (curr) {
+        //int *stat = 0;
+        // printf("WAITPID: %d\n", waitpid(curr->pid, stat, WNOHANG));
+        // if (WIFEXITED(*stat)) {
+        //     printf("Exited TRUE\n");
+        // }
+        printf("corefualt?\n");
+        curr = curr->next;
+    }
+}
+
 int getargc(char* argv[]) {
     // Count arguments
     int argc = 0;
@@ -218,6 +233,11 @@ int execute(char* command) {
     if (isParent) {
         // We should not wait if we are running a process with &
         if(!bg){
+
+            // NOTE: MAJOR FIX (maybe) need to instead of changing the fg process group, I can add a process to the current fg process
+            // group then my shell stays in foreground and just waits for output. Thus when ctrl z is delivered, my shell can handle
+            // and the other processes can be suspended. Thus the shell will remain in foreground. As of now this does not happen
+            // The shell is moved to the bg and then when ctrl z is delivered, it does not move back into the fg.
             if (setpgid(isParent, isParent)) {
                 printf("Unable to set pgid of %d to %d.\n", isParent, isParent);
                 exit(1);
@@ -290,7 +310,7 @@ int listen(SHELL_MODE mode) {
         if ('\n' == line[strlen(line)-1]) {
             line[strlen(line)-1] = '\0';
         }
-        
+        prune();
         //execute line as a command and arguments
         execute(line);
         prompt(mode);
