@@ -6,9 +6,11 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <errno.h>
 #include "./wsh.h"
 
 static struct JOB* jobList;
+static int shellfd;
 
 int getargc(char* argv[]) {
     // Count arguments
@@ -29,7 +31,7 @@ void bg(char* argv[]) {
     if (argc == 1) {
         fgjob = tcgetpgrp(0);
     }
-    if
+    //if
 
     exit(1);
 }
@@ -147,26 +149,58 @@ int execute(char* command) {
 
     // Verify file existance for cmdpath
     if(-1 == access(cmdpath, F_OK)) {
-        printf("File does not exist: %s\n", cmdpath);
-        return 0;
+        //printf("File does not exist: %s\n", cmdpath);
+        //return 0;
     }
 
     // Verify execute permisions for cmdpath
-    if(-1 == access(cmdpath, X_OK)) {
-        printf("Execute permission denied for %s\n", cmdpath);
-        exit(1);
+    if(-1 == access(cmdpath, X_OK) ) {
+        //printf("Execute permission denied for %s\n", cmdpath);
+        //exit(1);
     }
 
     // Execute command
     int isParent = fork();
+    if (-1 == isParent) {
+        printf("Failed to fork.\n");
+        exit(1);
+    }
     if (isParent) {
+        printf("Parent\n");
         // We should not wait if we are running a process with &
         if(!bg){
+            printf("CHILD is: %d\n", isParent);
+            setpgid(isParent, isParent);
+            int tcerno = tcsetpgrp(0, getpgid(isParent));
+            printf("NEW FG: %d\n", tcgetpgrp(STDIN_FILENO));
+            if (tcerno == -1) {
+                if (errno == EINVAL) {
+                    printf("An invalid value of pgid_id was specified.\n");
+                }
+                if (errno == EBADF) {
+                    printf("The fildes argument is not a valid file descriptor.\n");
+                }
+                if(errno == ENOTTY) {
+                    printf("The calling process does not have a controlling terminal, or the file represented by fildes is not the controlling terminal, or the controlling terminal is no longer associated with the session of the calling process.\n");
+                }
+            }
             waitpid(isParent, NULL, 0);
+            tcsetpgrp(STDIN_FILENO, getpid());
         }
     }
     else {
         // or cmdpath
+        printf("Child\n");
+        if(!bg) {
+            setpgid(getpid(), getpid());
+            printf("FG is: %d\n", tcgetpgrp(0));
+            printf("PRE FG child pid: %d child pgid: %d\n", getpid(), getpgid(getpid()));
+            printf("child pid: %d child pgid: %d\n", getpid(), getpgid(getpid()));
+        }
+        else {
+            printf("BACKGROUNDED\n");
+        }
+
         if (-1 == execvp(argv[0], argv)) {
             printf("Execution failed for %s\n", cmdpath);
             exit(1);
@@ -196,6 +230,8 @@ int listen(SHELL_MODE mode) {
 
     // getline mallocs a new buffer for us and will realloc() as necessary to handle longer lines
     while (-1 != (len = getline(&line, &cap, stdin))) {
+        printf("pid: %d, pgid: %d, psid %d\n", getpid(), getpgid(getpid()), getsid(getpid()));
+        printf("fgpgid: %d\n", tcgetpgrp(0));
         // Remove trailing newline
         if ('\n' == line[strlen(line)-1]) {
             line[strlen(line)-1] = '\0';
@@ -212,9 +248,42 @@ int listen(SHELL_MODE mode) {
     exit(0);
 }
 
+void sigtou_handler(int signo) {
+    // Set shell to fg if it is not already the foreground process
+    if (tcgetpgrp(shellfd) != getpid()) {
+        printf("running this code: %d\n", tcgetpgrp(shellfd));
+        tcsetpgrp(shellfd, getpid());
+    }
+}
+void myhndlr2(int signo) {
+    printf("STOP\n\n\n");
+}
+
 int main(int argc, char** argv) {
+    // Linked list of jobs started from the shell
     jobList = NULL;
 
+    char *shellname = ttyname(STDIN_FILENO);
+    if (!shellname) {
+        printf("Error getting controlling tty name.\n");
+        exit(1);
+    }
+
+    shellfd = open(shellname, O_RDWR); // fd associated to the controlling terminal
+    if (shellfd)
+
+    signal(SIGTSTP, myhndlr2);
+    signal(SIGTTOU, SIG_IGN);
+
+    printf("%s\n", ttyname(STDIN_FILENO));
+
+    pid_t shell_pgid = getpid();
+    setpgid(shell_pgid, shell_pgid);
+    tcsetpgrp(shellfd, shell_pgid);
+    signal(SIGTTOU, sigtou_handler);
+
+    printf("TTY/SHELLFD: %d, fg: %d\n", shellfd, tcgetpgrp(shellfd));
+    printf("pid: %d, pgid: %d, psid %d\n", getpid(), getpgid(getpid()), getsid(getpid()));
     // interactive shell mode
     if (1 == argc) {
         listen(INTERACTIVE);
