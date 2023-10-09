@@ -13,6 +13,54 @@
 static struct JOB* jobList;
 static int shellfd;
 
+int nextjid() {
+    int max = 1;
+    struct JOB *curr = jobList;
+    
+    while (curr) {
+        max = (max >= curr->jid) ? max: curr->jid;
+        curr = curr->next;
+    }
+
+    return max;
+}
+
+void addjob(pid_t pid, char **argv) {
+    int job = nextjid();
+
+    // Empty joblist case
+    if (!jobList) {
+        if (!(jobList = malloc(sizeof(struct JOB)))) {
+            printf("malloc failed.\n");
+            exit(1);
+        }
+        jobList->prev = NULL;
+    }
+    else {
+        struct JOB *curr = jobList;
+        while (curr->next) curr = curr->next;
+        jobList->prev = curr;
+    }
+
+    jobList->pid = pid;
+    jobList->jid = job;
+    jobList->pname = argv[0];
+    jobList->next = NULL;
+
+    char **arg = argv;
+    char **parg = jobList->pargv;
+    while(*arg) {
+        *parg = malloc(strlen(*arg));
+        if (!*parg) {
+            printf("malloc failed.\n");
+            exit(1);
+        }
+        strcpy(*parg, *arg);
+        arg++;
+        parg++;
+    }
+}
+
 int getargc(char* argv[]) {
     // Count arguments
     int argc = 0;
@@ -175,6 +223,7 @@ int execute(char* command) {
                 exit(1);
             }
 
+            // Set process to foreground
             if (-1 == tcsetpgrp(shellfd, getpgid(isParent))) {
                 printf("Unable to bring pgid %d to the foreground.\n", isParent);
                 exit(1);
@@ -185,27 +234,22 @@ int execute(char* command) {
                 exit(1);
             }
 
-            printf("Child Exited current fg process is: %d\n", tcgetpgrp(shellfd));
+            // Retrun shell to foreground
             tcsetpgrp(shellfd, getpid());
+        }
+        else {
+            // If job is run as background add extry to linked list
+            addjob(isParent, argv);
         }
     }
     else {
-        
-        if(!bg) {
-            //setpgid(getpid(), getpid());
-            // printf("FG is: %d\n", tcgetpgrp(0));
-            // printf("PRE FG child pid: %d child pgid: %d\n", getpid(), getpgid(getpid()));
-            // printf("child pid: %d child pgid: %d\n", getpid(), getpgid(getpid()));
-        }
-        else {
-            //printf("BACKGROUNDED\n");
-        }
-
         // or cmdpath
         if (-1 == execvp(argv[0], argv)) {
             printf("Execution failed for %s\n", cmdpath);
             exit(1);
         }
+
+        // Precautionary but will never be reached 
         exit(0);
     }
 
