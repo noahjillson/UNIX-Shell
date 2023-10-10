@@ -15,15 +15,18 @@ static int shellfd;
 pid_t shell_pgid;
 
 int nextjid() {
-    int max = 1;
+    int minUnused = 1;
     struct JOB *curr = jobList;
     
     while (curr) {
-        max = (max >= curr->jid) ? max: curr->jid;
+        if (minUnused == curr->jid) {
+            minUnused++;
+            curr = jobList;
+        }
         curr = curr->next;
     }
 
-    return max;
+    return minUnused;
 }
 
 void addjob(pid_t pid, char **argv) {
@@ -72,56 +75,36 @@ void addjob(pid_t pid, char **argv) {
 
 }
 
-// void addjob(pid_t pid, char **argv) {
-//     int job = nextjid();
-//     struct JOB *insertLoc;
-
-//     // Empty joblist case
-//     if (!jobList) {
-//         if (!(jobList = malloc(sizeof(struct JOB)))) {
-//             printf("malloc failed.\n");
-//             exit(1);
-//         }
-//         insertLoc = jobList;
-//         insertLoc->prev = NULL;
-//     }
-//     else {
-//         struct JOB *curr = jobList;
-        
-//         while (curr->next) curr = curr->next;
-//         insertLoc->prev = curr;
-//     }
-
-//     insertLoc->pid = pid;
-//     insertLoc->jid = job;
-//     insertLoc->pname = argv[0];
-//     insertLoc->next = NULL;
-
-//     char **arg = argv;
-//     char **parg = insertLoc->pargv;
-//     while(*arg) {
-//         *parg = malloc(strlen(*arg));
-//         if (!*parg) {
-//             printf("malloc failed.\n");
-//             exit(1);
-//         }
-//         strcpy(*parg, *arg);
-//         arg++;
-//         parg++;
-//     }
-// }
+void printjobs() {
+    struct JOB *curr = jobList;
+    
+    while (curr) {
+        printf("JOB: %s; JID: %d\n", curr->pname, curr->jid);
+        curr = curr->next;
+    }
+}
 
 void prune() {
     struct JOB *curr = jobList;
-    //struct JOB *prev = NULL;
+    struct JOB *prev = NULL;
     
     while (curr) {
-        //int *stat = 0;
         // printf("WAITPID: %d\n", waitpid(curr->pid, stat, WNOHANG));
-        // if (WIFEXITED(*stat)) {
-        //     printf("Exited TRUE\n");
-        // }
-        printf("JOB: %s\n", curr->pname);
+
+        int *stat = 0;
+        waitpid(curr->pid, stat, WNOHANG);
+        if (WIFEXITED(*stat)) {
+            if (prev) {
+                prev->next = curr->next;
+                if (curr->next){
+                    curr->prev = prev;
+                }
+            }
+            else {
+                jobList = curr->next;
+            }
+        }
+        prev = curr;
         curr = curr->next;
     }
 }
@@ -375,7 +358,7 @@ int listen(SHELL_MODE mode) {
         if ('\n' == line[strlen(line)-1]) {
             line[strlen(line)-1] = '\0';
         }
-        prune();
+        printjobs();
         //execute line as a command and arguments
         execute(line);
         prompt(mode);
@@ -400,6 +383,7 @@ void sigtstp_handler(int signo) {
 
 void sigchld_handler(int signo){
     printf("CAUGHT A SIGCHLD TRAP.\n");
+    prune();
     tcsetpgrp(shellfd, shell_pgid);
 }
 
