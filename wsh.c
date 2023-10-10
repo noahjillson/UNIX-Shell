@@ -12,6 +12,7 @@
 
 static struct JOB* jobList;
 static int shellfd;
+pid_t shell_pgid;
 
 int nextjid() {
     int max = 1;
@@ -26,29 +27,38 @@ int nextjid() {
 }
 
 void addjob(pid_t pid, char **argv) {
-    int job = nextjid();
+    int jobid = nextjid();
+    struct JOB *newJob = malloc(sizeof(struct JOB));
+    if (!newJob) {
+        printf("malloc failed.\n");
+        exit(1);
+    }
 
-    // Empty joblist case
+    // Case where jobList is empty
     if (!jobList) {
-        if (!(jobList = malloc(sizeof(struct JOB)))) {
-            printf("malloc failed.\n");
-            exit(1);
-        }
-        jobList->prev = NULL;
+        jobList = newJob;
+        newJob->prev = NULL;
     }
     else {
         struct JOB *curr = jobList;
         while (curr->next) curr = curr->next;
-        jobList->prev = curr;
+        curr->next = newJob;
+        newJob->prev = curr;
     }
 
-    jobList->pid = pid;
-    jobList->jid = job;
-    jobList->pname = argv[0];
-    jobList->next = NULL;
+    newJob->pid = pid;
+    newJob->jid = jobid;
+    newJob->next = NULL;
+
+    newJob->pname = malloc(strlen(argv[0]));
+    if (!(newJob->pname)) {
+        printf("malloc failed.\n");
+        exit(1);
+    }
+    newJob->pname = strcpy(newJob->pname, argv[0]);
 
     char **arg = argv;
-    char **parg = jobList->pargv;
+    char **parg = newJob->pargv;
     while(*arg) {
         *parg = malloc(strlen(*arg));
         if (!*parg) {
@@ -59,7 +69,47 @@ void addjob(pid_t pid, char **argv) {
         arg++;
         parg++;
     }
+
 }
+
+// void addjob(pid_t pid, char **argv) {
+//     int job = nextjid();
+//     struct JOB *insertLoc;
+
+//     // Empty joblist case
+//     if (!jobList) {
+//         if (!(jobList = malloc(sizeof(struct JOB)))) {
+//             printf("malloc failed.\n");
+//             exit(1);
+//         }
+//         insertLoc = jobList;
+//         insertLoc->prev = NULL;
+//     }
+//     else {
+//         struct JOB *curr = jobList;
+        
+//         while (curr->next) curr = curr->next;
+//         insertLoc->prev = curr;
+//     }
+
+//     insertLoc->pid = pid;
+//     insertLoc->jid = job;
+//     insertLoc->pname = argv[0];
+//     insertLoc->next = NULL;
+
+//     char **arg = argv;
+//     char **parg = insertLoc->pargv;
+//     while(*arg) {
+//         *parg = malloc(strlen(*arg));
+//         if (!*parg) {
+//             printf("malloc failed.\n");
+//             exit(1);
+//         }
+//         strcpy(*parg, *arg);
+//         arg++;
+//         parg++;
+//     }
+// }
 
 void prune() {
     struct JOB *curr = jobList;
@@ -71,7 +121,7 @@ void prune() {
         // if (WIFEXITED(*stat)) {
         //     printf("Exited TRUE\n");
         // }
-        printf("corefualt?\n");
+        printf("JOB: %s\n", curr->pname);
         curr = curr->next;
     }
 }
@@ -249,13 +299,13 @@ int execute(char* command) {
                 exit(1);
             }
 
-            if (-1 == waitpid(isParent, NULL, 0)) {
+            if (-1 == waitpid(isParent, NULL, WUNTRACED)) {
                 printf("Error waiting for pid %d.\n", isParent);
                 exit(1);
             }
 
             // Retrun shell to foreground
-            tcsetpgrp(shellfd, getpid());
+            tcsetpgrp(shellfd, shell_pgid);
         }
         else {
             // If job is run as background add extry to linked list
@@ -263,6 +313,21 @@ int execute(char* command) {
         }
     }
     else {
+        // Set pgid of child to child pid (Done in parent and child to avoid race condition)
+        if (!bg){
+            pid_t childpid = getpid();
+            if (setpgid(childpid, childpid)) {
+                printf("Unable to set pgid of %d to %d.\n", isParent, isParent);
+                exit(1);
+            }
+
+            // Set process to foreground (Done in parent and child to avoid race condition)
+            if (-1 == tcsetpgrp(shellfd, getpgid(childpid))) {
+                printf("Unable to bring pgid %d to the foreground.\n", isParent);
+                exit(1);
+            }
+        }
+
         // or cmdpath
         if (-1 == execvp(argv[0], argv)) {
             printf("Execution failed for %s\n", cmdpath);
@@ -287,7 +352,7 @@ int execute(char* command) {
 
 void prompt(SHELL_MODE mode) {
     if (INTERACTIVE == mode) {
-        printf("wsh> ");
+        printf("(fg:%d) wsh> ", tcgetpgrp(shellfd));
         fflush(stdout);
         if (fflush(stdout)) {
             printf("Failed to flush output buffer\n.");
@@ -322,18 +387,26 @@ int listen(SHELL_MODE mode) {
 
 void sigtou_handler(int signo) {
     // Set shell to fg if it is not already the foreground process
-    if (tcgetpgrp(shellfd) != getpid()) {
-        //printf("running this code: %d\n", tcgetpgrp(shellfd));
-        tcsetpgrp(shellfd, getpid());
-    }
+    printf("CAUGHT A SIGGTTOU\n");
+    // if (tcgetpgrp(shellfd) != getpid()) {
+    //     //printf("running this code: %d\n", tcgetpgrp(shellfd));
+    //     tcsetpgrp(shellfd, getpid());
+    // }
 }
 void sigtstp_handler(int signo) {
-    //printf("STOP\n\n\n");
+    tcsetpgrp(shellfd, getpid());
+    printf("Caught a sigstp\n");
+}
+
+void sigchld_handler(int signo){
+    printf("CAUGHT A SIGCHLD TRAP.\n");
+    tcsetpgrp(shellfd, shell_pgid);
 }
 
 int main(int argc, char** argv) {
     // Set signal handlers
     signal(SIGTSTP, sigtstp_handler);
+    signal(SIGCHLD, sigchld_handler);
     signal(SIGTTOU, SIG_IGN); // Initially ignore the SIGTTOU signal handler
 
     // Linked list of jobs started from the shell
@@ -355,10 +428,11 @@ int main(int argc, char** argv) {
 
     printf("%s\n", ttyname(STDIN_FILENO));
 
-    pid_t shell_pgid = getpid();
+    shell_pgid = getpid();
+    printf("Bash pid: %d\n", getpgid(shell_pgid));
     setpgid(shell_pgid, shell_pgid);
     tcsetpgrp(shellfd, shell_pgid);
-    signal(SIGTTOU, sigtou_handler);
+    //signal(SIGTTOU, sigtou_handler);
 
     printf("TTY/SHELLFD: %d, fg: %d\n", shellfd, tcgetpgrp(shellfd));
     printf("pid: %d, pgid: %d, psid %d\n", getpid(), getpgid(getpid()), getsid(getpid()));
