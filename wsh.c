@@ -66,6 +66,7 @@ void addjob(pid_t pid, char **argv, char *runAs) {
     newJob->pid = pid;
     newJob->jid = jobid;
     newJob->runAs = runAs;
+    newJob->pipeNext = NULL;
     newJob->next = NULL;
 
     newJob->pname = malloc(strlen(argv[0]));
@@ -87,7 +88,6 @@ void addjob(pid_t pid, char **argv, char *runAs) {
         arg++;
         parg++;
     }
-
 }
 
 void printjobs() {
@@ -102,6 +102,31 @@ void printjobs() {
     }
 }
 
+void editJob(struct JOB *job, pid_t pid, char* pipenext, char* argv[]) {
+    job->pid = pid;
+    job->pipeNext = pipenext;
+
+    job->pname = malloc(strlen(argv[0]));
+    if (!(job->pname)) {
+        printf("malloc failed.\n");
+        exit(1);
+    }
+    job->pname = strcpy(job->pname, argv[0]);
+
+    char **arg = argv;
+    char **parg = job->pargv;
+    while(*arg) {
+        *parg = malloc(strlen(*arg));
+        if (!*parg) {
+            printf("malloc failed.\n");
+            exit(1);
+        }
+        strcpy(*parg, *arg);
+        arg++;
+        parg++;
+    }
+}
+
 void removejob(pid_t pidw) {
     struct JOB *curr = jobList;
     struct JOB *prev = NULL;
@@ -109,6 +134,11 @@ void removejob(pid_t pidw) {
     while (curr) {
         // Remove curr from jobList if exited
         if (curr->pid == pidw) {
+            // if (!(curr->pipeNext)) {
+            //     action(curr->pipeNext, curr);
+            //     prev = curr;
+            // }
+            // else{
             // Skip current going forward
             if (prev) {
                 prev->next = curr->next;
@@ -121,6 +151,8 @@ void removejob(pid_t pidw) {
             if (curr->next){
                 curr->next->prev = prev;
             }
+            //}
+
         }
         else{
             prev = curr;
@@ -128,6 +160,186 @@ void removejob(pid_t pidw) {
         curr = curr->next;
     }
 }
+
+
+// int execute(char* command, struct JOB *callingJob) {
+//     // Return 0 if NULL command was passed
+//     if (NULL == command) {
+//         return 0;
+//     }
+
+//     char* commandCpy = malloc(strlen(command));
+//     if (!commandCpy) {
+//         printf("malloc failed.\n");
+//         exit(1);
+//     }
+//     strcpy(commandCpy, command);
+
+//     // Return 0 if empty command was passed
+//     int maxsize = strlen(command);
+//     int bg = ('&' == command[maxsize-1]);
+//     if (bg) {
+//         command[maxsize-1] = '\0';
+//         maxsize--;
+//     }
+//     if (0 == maxsize) {
+//         return 0;
+//     }
+
+//     char* path = "/bin/";
+//     char* argv[maxsize + 1]; // +1 allows for NULL terminated array
+//     char* tok; // Do not need to free; is a pointer to a char within command
+//     char** arg = argv;
+
+//     char* pipetok = strsep(&command, "|");
+//     char* pipenext = command;
+//     char* pipenextcpy = malloc(strlen(command));
+//     if (!pipenextcpy) {
+//         printf("malloc failed.\n");
+//         exit(1);
+//     }
+//     while (pipenext && *pipenext != '|') pipenext++;
+//     if (*pipenext == '|') {
+//         pipenextcpy = strcpy(pipenextcpy, pipenext);
+//     }
+//     else {
+//         pipenextcpy = NULL;
+//     }
+
+    
+//     while(pipetok != NULL) {
+//         tok = strsep(&pipetok, " ");
+
+//         if(0 == strlen(tok)) {
+//             continue;
+//         }
+
+//         // Allocate mem and copy token into argument array
+//         *arg = malloc(strlen(tok));
+//         if (NULL == *arg) {
+//             printf("Memory allocation failed. Exiting.\n");
+//             exit(1);
+//         }
+//         strcpy(*arg, tok); // tok is always null terminated so strcpy is safe here 
+        
+//         arg += 1;
+//     }
+//     // NULL terminate our argv arr of ptr
+//     *arg = NULL;
+
+//     // Check if command is internally handled
+//     if (builtin(argv[0], argv)) {
+//         return 0;
+//     }
+
+//     // Construct the path to the command we want to execute
+//     char *cmdpath = malloc(strlen(path) + strlen(argv[0]) + 1);
+//     if (NULL == cmdpath) {
+//         printf("Memory allocation failed. Exiting\n");
+//         exit(1);
+//     }
+//     *cmdpath = '\0';
+//     strcpy(cmdpath, path);
+//     strcat(cmdpath, *argv);
+
+//     // Verify file existance for cmdpath
+//     if(-1 == access(cmdpath, F_OK)) {
+//         //printf("File does not exist: %s\n", cmdpath);
+//         //return 0;
+//     }
+
+//     // Verify execute permisions for cmdpath
+//     if(-1 == access(cmdpath, X_OK) ) {
+//         //printf("Execute permission denied for %s\n", cmdpath);
+//         //exit(1);
+//     }
+
+//     // Execute command
+//     int isParent = fork();
+//     if (-1 == isParent) {
+//         printf("Failed to fork.\n");
+//         exit(1);
+//     }
+//     if (isParent) {
+//         if (callingJob) {
+//             editJob(callingJob, isParent, pipenextcpy, argv);
+//         }
+//         else {
+//             addjob(isParent, argv, commandCpy, pipenextcpy);
+//         }
+
+//         // We should not wait if we are running a process with &
+//         if(!bg){
+
+//             // NOTE: MAJOR FIX (maybe) need to instead of changing the fg process group, I can add a process to the current fg process
+//             // group then my shell stays in foreground and just waits for output. Thus when ctrl z is delivered, my shell can handle
+//             // and the other processes can be suspended. Thus the shell will remain in foreground. As of now this does not happen
+//             // The shell is moved to the bg and then when ctrl z is delivered, it does not move back into the fg.
+//             if (setpgid(isParent, isParent)) {
+//                 printf("Unable to set pgid of %d to %d.\n", isParent, isParent);
+//                 exit(1);
+//             }
+
+//             // Set process to foreground
+//             if (-1 == tcsetpgrp(shellfd, getpgid(isParent))) {
+//                 printf("Unable to bring pgid %d to the foreground.\n", isParent);
+//                 exit(1);
+//             }
+
+//             int stat = 1;
+//             if (-1 == waitpid(isParent, &stat, WUNTRACED)) {
+//                 printf("Error waiting for pid %d.\n", isParent);
+//                 exit(1);
+//             }
+
+//             if (WIFEXITED(stat)) {
+                
+//                 removejob(isParent, &execute);
+                
+//             }
+
+//             // Retrun shell to foreground
+//             tcsetpgrp(shellfd, shell_pgid);
+//         }
+//     }
+//     else {
+//         // Set pgid of child to child pid (Done in parent and child to avoid race condition)
+//         pid_t childpid = getpid();
+//         if (setpgid(childpid, childpid)) {
+//             printf("Unable to set pgid of %d to %d.\n", isParent, isParent);
+//             exit(1);
+//         }
+
+//         if (!bg){
+//             // Set process to foreground (Done in parent and child to avoid race condition)
+//             if (-1 == tcsetpgrp(shellfd, getpgid(childpid))) {
+//                 printf("Unable to bring pgid %d to the foreground.\n", isParent);
+//                 exit(1);
+//             }
+//         }
+
+//         // or cmdpath
+//         if (-1 == execvp(argv[0], argv)) {
+//             printf("Execution failed for %s\n", cmdpath);
+//             exit(1);
+//         }
+
+//         // Precautionary but will never be reached 
+//         exit(0);
+//     }
+
+//     // Free allocated mem
+//     free(cmdpath);
+//     arg = argv;
+//     while(NULL != *arg) {
+//         free(*arg);
+//         arg += 1;
+//     }
+
+//     // return success
+//     return 0;
+// }
+
 
 void prune() {
     struct JOB *curr = jobList;
@@ -139,6 +351,11 @@ void prune() {
 
         // Remove curr from jobList if exited
         if (WIFEXITED(stat)) {
+            // if (!(curr->pipeNext)) {
+            //     execute(curr->pipeNext, curr);
+            //     prev = curr;
+            // }
+            //else {
             // Skip current going forward
             if (prev) {
                 prev->next = curr->next;
@@ -151,6 +368,8 @@ void prune() {
             if (curr->next){
                 curr->next->prev = prev;
             }
+            //}
+
         }
         else{
             prev = curr;
@@ -292,6 +511,201 @@ int builtin(char* command, char* argv[]) {
     return 1;
 }
 
+
+// int execute(char* command) {
+//     // Return 0 if NULL command was passed
+//     if (NULL == command) {
+//         return 0;
+//     }
+//     char* commandCpy = malloc(strlen(command));
+//     if (!commandCpy) {
+//         printf("malloc failed.\n");
+//         exit(1);
+//     }
+//     strcpy(commandCpy, command);
+
+//     // Return 0 if empty command was passed
+//     int maxsize = strlen(command);
+//     int bg = ('&' == command[maxsize-1]);
+//     if (bg) {
+//         command[maxsize-1] = '\0';
+//         maxsize--;
+//     }
+//     if (0 == maxsize) {
+//         return 0;
+//     }
+// }
+
+/**
+ * Returns a NULL terminated array of substrings from command separated by sep
+*/
+// char** parseArgs(char *command, char *sep, char *(*argv)[]) {
+//     // Return 0 if NULL command was passed
+//     if (NULL == command) {
+//         return NULL;
+//     }
+
+//     int maxsize = strlen(command);
+//     int bg = ('&' == command[maxsize-1]);
+//     if (bg) {
+//         command[maxsize-1] = '\0';
+//         maxsize--;
+//     }
+//     if (0 == maxsize) {
+//         return NULL;
+//     }
+
+//     char* tok; // Do not need to free; is a pointer to a char within command
+//     char** arg = *argv;
+//     while(command != NULL) {
+//         tok = strsep(&command, " ");
+
+//         if(0 == strlen(tok)) {
+//             continue;
+//         }
+
+//         // Allocate mem and copy token into argument array
+//         *arg = malloc(strlen(tok));
+//         if (NULL == *arg) {
+//             printf("Memory allocation failed. Exiting.\n");
+//             exit(1);
+//         }
+//         strcpy(*arg, tok); // tok is always null terminated so strcpy is safe here 
+        
+//         arg += 1;
+//     }
+//     // NULL terminate our argv arr of ptr
+//     *arg = NULL;
+
+//     return argv;
+// }
+
+// void createproc(char *(*args)[]) {
+//     char *argv[MAX_ARG_CNT] = *args;
+
+//     if (builtin(argv[0], argv)) {
+//         return 0;
+//     }
+
+//     char *path = "/bin/";
+//     char *cmdpath = malloc(strlen(path) + strlen(argv[0]) + 1);
+//     if (NULL == cmdpath) {
+//         printf("Memory allocation failed. Exiting\n");
+//         exit(1);
+//     }
+//     *cmdpath = '\0';
+//     strcpy(cmdpath, path);
+//     strcat(cmdpath, *argv);
+
+//     // Verify file existance for cmdpath
+//     if(-1 == access(cmdpath, F_OK)) {
+//         //printf("File does not exist: %s\n", cmdpath);
+//         //return 0;
+//     }
+
+//     // Verify execute permisions for cmdpath
+//     if(-1 == access(cmdpath, X_OK) ) {
+//         //printf("Execute permission denied for %s\n", cmdpath);
+//         //exit(1);
+//     }
+
+//     int isParent = fork();
+//     if (-1 == isParent) {
+//         printf("Failed to fork.\n");
+//         exit(1);
+//     }
+//     if (isParent) {
+//         addjob(isParent, argv, commandCpy);
+
+//         // We should not wait if we are running a process with &
+//         if(!bg){
+//             if (setpgid(isParent, isParent)) {
+//                 printf("Unable to set pgid of %d to %d.\n", isParent, isParent);
+//                 exit(1);
+//             }
+
+//             // Set process to foreground
+//             if (-1 == tcsetpgrp(shellfd, getpgid(isParent))) {
+//                 printf("Unable to bring pgid %d to the foreground.\n", isParent);
+//                 exit(1);
+//             }
+
+//             int stat = 1;
+//             if (-1 == waitpid(isParent, &stat, WUNTRACED)) {
+//                 printf("Error waiting for pid %d.\n", isParent);
+//                 exit(1);
+//             }
+
+//             if (WIFEXITED(stat)) {
+//                 removejob(isParent);
+//             }
+
+//             // Retrun shell to foreground
+//             tcsetpgrp(shellfd, shell_pgid);
+//         }
+//     }
+//     else {
+//         // Set pgid of child to child pid (Done in parent and child to avoid race condition)
+//         pid_t childpid = getpid();
+//         if (setpgid(childpid, childpid)) {
+//             printf("Unable to set pgid of %d to %d.\n", isParent, isParent);
+//             exit(1);
+//         }
+
+//         if (!bg){
+//             // Set process to foreground (Done in parent and child to avoid race condition)
+//             if (-1 == tcsetpgrp(shellfd, getpgid(childpid))) {
+//                 printf("Unable to bring pgid %d to the foreground.\n", isParent);
+//                 exit(1);
+//             }
+//         }
+
+//         // or cmdpath
+//         if (-1 == execvp(argv[0], argv)) {
+//             printf("Execution failed for %s\n", cmdpath);
+//             exit(1);
+//         }
+
+//         // Precautionary but will never be reached 
+//         exit(0);
+//     }
+// }
+
+// createjob(char **commands) {
+//     char *prev = NULL;
+//     char *curr = *commands;
+
+//     char *argvp[MAX_ARG_CNT];
+//     char *argvc[MAX_ARG_CNT];
+    
+//     while(commands) {
+//         parseArgs(curr, " ", &argvc);
+
+//         if (builtin(argvc[0], argvc)) {
+//             return 0;
+//         }
+
+//         // think we need to verify that the args exist here then fork recrusively or something
+//     }
+// }
+
+// void executecommand(char* job) {
+//     char *commands[MAX_ARG_CNT];
+//     if(!parseArgs(job, "|", &commands)) {
+//         return;
+//     }
+
+//     char **command = commands;
+//     while (!command) {
+//         char *argv[MAX_ARG_CNT];
+//         parseArgs(command, " ", &argv);
+//         createproc(&argv);
+//         command++;
+//     }
+
+    
+// }
+
 int execute(char* command) {
     // Return 0 if NULL command was passed
     if (NULL == command) {
@@ -317,132 +731,198 @@ int execute(char* command) {
     }
 
     char* path = "/bin/";
-    char* argv[maxsize + 1]; // +1 allows for NULL terminated array
-    char* tok; // Do not need to free; is a pointer to a char within command
-    char** arg = argv;
-    while(command != NULL) {
-        tok = strsep(&command, " ");
 
-        if(0 == strlen(tok)) {
-            continue;
-        }
+    char* pipetok; // = strsep(&command, "|");
+    // char* pipenext = command;
+    // char* pipenextcpy = malloc(strlen(command));
+    // if (!pipenextcpy) {
+    //     printf("malloc failed.\n");
+    //     exit(1);
+    // }
+    // while (pipenext && *pipenext != '|') pipenext++;
+    // if (*pipenext == '|') {
+    //     pipenextcpy = strcpy(pipenextcpy, pipenext);
+    // }
+    // else {
+    //     pipenextcpy = NULL;
+    // }
 
-        // Allocate mem and copy token into argument array
-        *arg = malloc(strlen(tok));
-        if (NULL == *arg) {
-            printf("Memory allocation failed. Exiting.]n");
-            exit(1);
+    int numcommands = 1;
+    char *c = command;
+    while (*c) {
+        if (*c == '|') {
+            numcommands++;
         }
-        strcpy(*arg, tok); // tok is always null terminated so strcpy is safe here 
+        c++;
+    }
+
+    int stdfd[2];
+    pipe(stdfd);
+    dup2(STDOUT_FILENO, stdfd[1]);
+    dup2(STDIN_FILENO, stdfd[0]);
+
+    int currcommand = 1;
+    pid_t firstCommandPid = -1;
+    while(command != NULL){
+        pipetok = strsep(&command, "|");
+        //printf("pipetok: %s\n", pipetok);
         
-        arg += 1;
-    }
-    // NULL terminate our argv arr of ptr
-    *arg = NULL;
+        char* argv[maxsize + 1]; // +1 allows for NULL terminated array
+        char* tok; // Do not need to free; is a pointer to a char within command
+        char** arg = argv;
+        while(pipetok != NULL) {
+            tok = strsep(&pipetok, " ");
+            if(0 == strlen(tok)) {
+                continue;
+            }
+            //printf("ARG TOK: %s\n", tok);
 
-    // Check if command is internally handled
-    if (builtin(argv[0], argv)) {
-        return 0;
-    }
-
-    // Construct the path to the command we want to execute
-    char *cmdpath = malloc(strlen(path) + strlen(argv[0]) + 1);
-    if (NULL == cmdpath) {
-        printf("Memory allocation failed. Exiting\n");
-        exit(1);
-    }
-    *cmdpath = '\0';
-    strcpy(cmdpath, path);
-    strcat(cmdpath, *argv);
-
-    // Verify file existance for cmdpath
-    if(-1 == access(cmdpath, F_OK)) {
-        //printf("File does not exist: %s\n", cmdpath);
-        //return 0;
-    }
-
-    // Verify execute permisions for cmdpath
-    if(-1 == access(cmdpath, X_OK) ) {
-        //printf("Execute permission denied for %s\n", cmdpath);
-        //exit(1);
-    }
-
-    // Execute command
-    int isParent = fork();
-    if (-1 == isParent) {
-        printf("Failed to fork.\n");
-        exit(1);
-    }
-    if (isParent) {
-        addjob(isParent, argv, commandCpy);
-
-        // We should not wait if we are running a process with &
-        if(!bg){
-
-            // NOTE: MAJOR FIX (maybe) need to instead of changing the fg process group, I can add a process to the current fg process
-            // group then my shell stays in foreground and just waits for output. Thus when ctrl z is delivered, my shell can handle
-            // and the other processes can be suspended. Thus the shell will remain in foreground. As of now this does not happen
-            // The shell is moved to the bg and then when ctrl z is delivered, it does not move back into the fg.
-            if (setpgid(isParent, isParent)) {
-                printf("Unable to set pgid of %d to %d.\n", isParent, isParent);
+            // Allocate mem and copy token into argument array
+            *arg = malloc(strlen(tok));
+            if (NULL == *arg) {
+                printf("Memory allocation failed. Exiting.\n");
                 exit(1);
             }
-
-            // Set process to foreground
-            if (-1 == tcsetpgrp(shellfd, getpgid(isParent))) {
-                printf("Unable to bring pgid %d to the foreground.\n", isParent);
-                exit(1);
-            }
-
-            int stat = 1;
-            if (-1 == waitpid(isParent, &stat, WUNTRACED)) {
-                printf("Error waiting for pid %d.\n", isParent);
-                exit(1);
-            }
-
-            if (WIFEXITED(stat)) {
-                removejob(isParent);
-            }
-
-            // Retrun shell to foreground
-            tcsetpgrp(shellfd, shell_pgid);
+            strcpy(*arg, tok); // tok is always null terminated so strcpy is safe here 
+            
+            arg += 1;
         }
-    }
-    else {
-        // Set pgid of child to child pid (Done in parent and child to avoid race condition)
-        pid_t childpid = getpid();
-        if (setpgid(childpid, childpid)) {
-            printf("Unable to set pgid of %d to %d.\n", isParent, isParent);
+        // NULL terminate our argv arr of ptr
+        *arg = NULL;
+
+        // Check if command is internally handled
+        if (builtin(argv[0], argv)) {
+            return 0;
+        }
+
+        // Construct the path to the command we want to execute
+        char *cmdpath = malloc(strlen(path) + strlen(argv[0]) + 1);
+        if (NULL == cmdpath) {
+            printf("Memory allocation failed. Exiting\n");
             exit(1);
         }
+        *cmdpath = '\0';
+        strcpy(cmdpath, path);
+        strcat(cmdpath, *argv);
 
-        if (!bg){
-            // Set process to foreground (Done in parent and child to avoid race condition)
-            if (-1 == tcsetpgrp(shellfd, getpgid(childpid))) {
-                printf("Unable to bring pgid %d to the foreground.\n", isParent);
-                exit(1);
-            }
+        // Verify file existance for cmdpath
+        if(-1 == access(cmdpath, F_OK)) {
+            //printf("File does not exist: %s\n", cmdpath);
+            //return 0;
         }
 
-        // or cmdpath
-        if (-1 == execvp(argv[0], argv)) {
-            printf("Execution failed for %s\n", cmdpath);
+        // Verify execute permisions for cmdpath
+        if(-1 == access(cmdpath, X_OK) ) {
+            //printf("Execute permission denied for %s\n", cmdpath);
+            //exit(1);
+        }
+
+        int pipefd[2];
+        if (numcommands > 1){ //) && currcommand > 1 && currcommand < numcommands) {
+            pipe(pipefd);
+        }
+        // Execute command
+        int isParent = fork();
+        if (-1 == isParent) {
+            printf("Failed to fork.\n");
             exit(1);
         }
+        if (isParent) {
+            if (numcommands > 1) {
+                if (currcommand == numcommands) {
+                    //dup2(stdfd[0], STDIN_FILENO);
+                }
+                else {
+                    dup2(pipefd[0], STDIN_FILENO);
+                }
+            }
 
-        // Precautionary but will never be reached 
-        exit(0);
+            if (firstCommandPid == -1) {
+                firstCommandPid = isParent;
+            }
+
+            addjob(isParent, argv, commandCpy);
+
+            // We should not wait if we are running a process with &
+            if(!bg){
+                if (setpgid(isParent, firstCommandPid)) {
+                    printf("PUnable to set pgid of %d to %d.\n", isParent, firstCommandPid);
+                    exit(1);
+                }
+
+                // Set process to foreground
+                if (-1 == tcsetpgrp(shellfd, getpgid(firstCommandPid))) {
+                    printf("Unable to bring pgid %d to the foreground.\n", isParent);
+                    exit(1);
+                }
+
+                int stat = 1;
+                if (-1 == waitpid(isParent, &stat, WUNTRACED)) {
+                    printf("Error waiting for pid %d.\n", isParent);
+                    exit(1);
+                }
+
+                if (WIFEXITED(stat)) {
+                    removejob(isParent);
+                }
+
+                // Retrun shell to foreground
+                tcsetpgrp(shellfd, shell_pgid);
+            }
+        }
+        else {
+            if (numcommands > 1) {
+                if (currcommand == numcommands) {
+                    //dup2(stdfd[1], STDOUT_FILENO);
+                }
+                else {
+                    dup2(pipefd[1], STDOUT_FILENO);
+                }
+            }
+
+            if (firstCommandPid == -1) {
+                firstCommandPid = getpid();
+            }
+            
+            // Set pgid of child to child pid (Done in parent and child to avoid race condition)
+            pid_t childpid = getpid();
+            if (setpgid(childpid, firstCommandPid)) {
+                printf("CUnable to set pgid of %d to %d.\n", childpid, firstCommandPid);
+                exit(1);
+            }
+
+            if (!bg){
+                // Set process to foreground (Done in parent and child to avoid race condition)
+                if (-1 == tcsetpgrp(shellfd, getpgid(firstCommandPid))) {
+                    printf("Unable to bring pgid %d to the foreground.\n", isParent);
+                    exit(1);
+                }
+            }
+
+            // or cmdpath
+            if (-1 == execvp(argv[0], argv)) {
+                printf("Execution failed for %s\n", cmdpath);
+                exit(1);
+            }
+
+            // Precautionary but will never be reached 
+            exit(0);
+        }
+    
+        // Free allocated mem
+        free(cmdpath);
+        arg = argv;
+        while(NULL != *arg) {
+            free(*arg);
+            arg += 1;
+        }
+        currcommand++;
     }
-
-    // Free allocated mem
-    free(cmdpath);
-    arg = argv;
-    while(NULL != *arg) {
-        free(*arg);
-        arg += 1;
-    }
-
     // return success
+
+    dup2(stdfd[1], STDOUT_FILENO);
+    dup2(stdfd[0], STDIN_FILENO);
+
     return 0;
 }
 
@@ -529,16 +1009,16 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
-    printf("%s\n", ttyname(STDIN_FILENO));
+    //printf("%s\n", ttyname(STDIN_FILENO));
 
     shell_pgid = getpid();
-    printf("Bash pid: %d\n", getpgid(shell_pgid));
+    //printf("Bash pid: %d\n", getpgid(shell_pgid));
     setpgid(shell_pgid, shell_pgid);
     tcsetpgrp(shellfd, shell_pgid);
     //signal(SIGTTOU, sigtou_handler);
 
-    printf("TTY/SHELLFD: %d, fg: %d\n", shellfd, tcgetpgrp(shellfd));
-    printf("pid: %d, pgid: %d, psid %d\n", getpid(), getpgid(getpid()), getsid(getpid()));
+    //printf("TTY/SHELLFD: %d, fg: %d\n", shellfd, tcgetpgrp(shellfd));
+    //printf("pid: %d, pgid: %d, psid %d\n", getpid(), getpgid(getpid()), getsid(getpid()));
     // interactive shell mode
     if (1 == argc) {
         listen(INTERACTIVE);
