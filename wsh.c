@@ -77,7 +77,10 @@ void addjob(pid_t pid, char **argv) {
 
 void printjobs() {
     struct JOB *curr = jobList;
-    
+    if(!curr) {
+        printf("JobList Empty.\n");
+    }
+
     while (curr) {
         printf("JOB: %s; JID: %d\n", curr->pname, curr->jid);
         curr = curr->next;
@@ -89,23 +92,29 @@ void prune() {
     struct JOB *prev = NULL;
     
     while (curr) {
-        // printf("WAITPID: %d\n", waitpid(curr->pid, stat, WNOHANG));
-
-        int *stat = 0;
-        waitpid(curr->pid, stat, WNOHANG);
-        if (WIFEXITED(*stat)) {
+        int stat = 1;
+        waitpid(curr->pid, &stat, WNOHANG);
+        WIFEXITED(stat);
+        // Remove curr from jobList if exited
+        if (WIFEXITED(stat)) {
+            // Skip current going forward
             if (prev) {
                 prev->next = curr->next;
-                if (curr->next){
-                    curr->prev = prev;
-                }
             }
             else {
                 jobList = curr->next;
             }
+
+            // Skip current going backwards
+            if (curr->next){
+                curr->next->prev = prev;
+            }
         }
-        prev = curr;
+        else{
+            prev = curr;
+        }
         curr = curr->next;
+        //printjobs();
     }
 }
 
@@ -335,7 +344,7 @@ int execute(char* command) {
 
 void prompt(SHELL_MODE mode) {
     if (INTERACTIVE == mode) {
-        printf("(fg:%d) wsh> ", tcgetpgrp(shellfd));
+        printf("wsh> ");
         fflush(stdout);
         if (fflush(stdout)) {
             printf("Failed to flush output buffer\n.");
@@ -358,7 +367,7 @@ int listen(SHELL_MODE mode) {
         if ('\n' == line[strlen(line)-1]) {
             line[strlen(line)-1] = '\0';
         }
-        printjobs();
+        // printjobs();
         //execute line as a command and arguments
         execute(line);
         prompt(mode);
@@ -389,7 +398,7 @@ void sigchld_handler(int signo){
 
 int main(int argc, char** argv) {
     // Set signal handlers
-    signal(SIGTSTP, sigtstp_handler);
+    signal(SIGTSTP, SIG_IGN); // We ignore so that SIGTSTP is not propogated to child processes 
     signal(SIGCHLD, sigchld_handler);
     signal(SIGTTOU, SIG_IGN); // Initially ignore the SIGTTOU signal handler
 
