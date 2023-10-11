@@ -16,11 +16,3 @@ struct JOB {
     struct JOB *next;
     struct JOB *prev;
 };
-// const struct JOB HEAD = {
-//     -1,
-//     NULL,
-//     NULL,
-//     NULL,
-//     NULL,
-//     NULL
-// };
