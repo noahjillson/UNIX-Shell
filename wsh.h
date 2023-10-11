@@ -12,6 +12,7 @@ struct JOB {
     int jid;
     char *pname;
     char *pargv[MAX_ARG_CNT];
+    char *runAs;
     struct JOB *pipeNext;
     struct JOB *next;
     struct JOB *prev;

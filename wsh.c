@@ -15,6 +15,11 @@ static int jobListDirty;
 static int shellfd;
 pid_t shell_pgid;
 
+void sigtstp_handler(int signo) {
+    tcsetpgrp(shellfd, getpid());
+    printf("Caught a sigstp fron %d in group %d\n", getpid(), getpgid(getpid()));
+}
+
 int nextjid() {
     int minUnused = 1;
     struct JOB *curr = jobList;
@@ -38,7 +43,7 @@ int nextjid() {
     return minUnused;
 }
 
-void addjob(pid_t pid, char **argv) {
+void addjob(pid_t pid, char **argv, char *runAs) {
     int jobid = nextjid();
     struct JOB *newJob = malloc(sizeof(struct JOB));
     if (!newJob) {
@@ -60,6 +65,7 @@ void addjob(pid_t pid, char **argv) {
 
     newJob->pid = pid;
     newJob->jid = jobid;
+    newJob->runAs = runAs;
     newJob->next = NULL;
 
     newJob->pname = malloc(strlen(argv[0]));
@@ -96,14 +102,41 @@ void printjobs() {
     }
 }
 
+void removejob(pid_t pidw) {
+    struct JOB *curr = jobList;
+    struct JOB *prev = NULL;
+
+    while (curr) {
+        // Remove curr from jobList if exited
+        if (curr->pid == pidw) {
+            // Skip current going forward
+            if (prev) {
+                prev->next = curr->next;
+            }
+            else {
+                jobList = curr->next;
+            }
+
+            // Skip current going backwards
+            if (curr->next){
+                curr->next->prev = prev;
+            }
+        }
+        else{
+            prev = curr;
+        }
+        curr = curr->next;
+    }
+}
+
 void prune() {
     struct JOB *curr = jobList;
     struct JOB *prev = NULL;
-    
+
     while (curr) {
         int stat = 1;
         waitpid(curr->pid, &stat, WNOHANG);
-        WIFEXITED(stat);
+
         // Remove curr from jobList if exited
         if (WIFEXITED(stat)) {
             // Skip current going forward
@@ -123,7 +156,6 @@ void prune() {
             prev = curr;
         }
         curr = curr->next;
-        //printjobs();
     }
 }
 
@@ -180,8 +212,6 @@ void bg(char* argv[]) {
 
     if (!j) return;
 
-    // Set shell to foreground if not already
-    // tcsetpgrp(shellfd, shell_pgid);
     kill(j->pid, SIGCONT);
 }
 
@@ -192,11 +222,33 @@ void fg(char* argv[]) {
 
     tcsetpgrp(shellfd, getpgid(j->pid));
     kill(j->pid, SIGCONT);
-    waitpid(j->pid, NULL, WUNTRACED);
+
+    int stat = 1;
+    waitpid(j->pid, &stat, WUNTRACED);
+    if (WIFEXITED(stat)) {
+        removejob(j->pid);
+    }
 }
 
 void exitShell() {
     exit(0);
+}
+
+void jobs() {
+    struct JOB *curr = jobList;
+    while(curr) {
+        char *last = &((curr->runAs)[strlen(curr->runAs)]);
+        if (*last == '&') {
+            *last = '\0';
+            printf("%d: %s &\n", curr->jid, curr->runAs);
+            *last = '&';
+        }
+        else {
+            printf("%d: %s\n", curr->jid, curr->runAs);
+        }
+        
+        curr = curr->next;
+    }
 }
 
 void cd(char* argv[]){
@@ -228,7 +280,7 @@ int builtin(char* command, char* argv[]) {
     }
     else if (!strcmp(command, "jobs"))
     {
-        //jobs(argv);
+        jobs();
     }
     else if (!strcmp(command, "cd"))
     {
@@ -246,6 +298,13 @@ int execute(char* command) {
         return 0;
     }
 
+    char* commandCpy = malloc(strlen(command));
+    if (!commandCpy) {
+        printf("malloc failed.\n");
+        exit(1);
+    }
+    strcpy(commandCpy, command);
+
     // Return 0 if empty command was passed
     int maxsize = strlen(command);
     int bg = ('&' == command[maxsize-1]);
@@ -256,16 +315,6 @@ int execute(char* command) {
     if (0 == maxsize) {
         return 0;
     }
-
-    // if (maxsize > MAX_ARG_CNT) {
-    //     printf("\n");
-    //     return 0;
-    // }
-    // Remove trailing newline
-    // if ('\n' == command[maxsize-1]) {
-    //     command[maxsize-1] = '\0';
-    //     maxsize--;
-    // }
 
     char* path = "/bin/";
     char* argv[maxsize + 1]; // +1 allows for NULL terminated array
@@ -325,6 +374,8 @@ int execute(char* command) {
         exit(1);
     }
     if (isParent) {
+        addjob(isParent, argv, commandCpy);
+
         // We should not wait if we are running a process with &
         if(!bg){
 
@@ -343,38 +394,35 @@ int execute(char* command) {
                 exit(1);
             }
 
-            if (-1 == waitpid(isParent, NULL, WUNTRACED)) {
+            int stat = 1;
+            if (-1 == waitpid(isParent, &stat, WUNTRACED)) {
                 printf("Error waiting for pid %d.\n", isParent);
                 exit(1);
+            }
+
+            if (WIFEXITED(stat)) {
+                removejob(isParent);
             }
 
             // Retrun shell to foreground
             tcsetpgrp(shellfd, shell_pgid);
         }
-        // else {
-        //     // If job is run as background add extry to linked list
-            
-        // }
-        addjob(isParent, argv);
     }
     else {
         // Set pgid of child to child pid (Done in parent and child to avoid race condition)
-        if (!bg){
-            pid_t childpid = getpid();
-            if (setpgid(childpid, childpid)) {
-                printf("Unable to set pgid of %d to %d.\n", isParent, isParent);
-                exit(1);
-            }
+        pid_t childpid = getpid();
+        if (setpgid(childpid, childpid)) {
+            printf("Unable to set pgid of %d to %d.\n", isParent, isParent);
+            exit(1);
+        }
 
+        if (!bg){
             // Set process to foreground (Done in parent and child to avoid race condition)
             if (-1 == tcsetpgrp(shellfd, getpgid(childpid))) {
                 printf("Unable to bring pgid %d to the foreground.\n", isParent);
                 exit(1);
             }
         }
-
-        // Set signal handler to default so that SIGTSTP is caught
-        signal(SIGTSTP, SIG_DFL);
 
         // or cmdpath
         if (-1 == execvp(argv[0], argv)) {
@@ -435,33 +483,31 @@ int listen(SHELL_MODE mode) {
 
 void sigtou_handler(int signo) {
     // Set shell to fg if it is not already the foreground process
-    printf("CAUGHT A SIGGTTOU\n");
+    //printf("CAUGHT A SIGGTTOU\n");
     // if (tcgetpgrp(shellfd) != getpid()) {
     //     //printf("running this code: %d\n", tcgetpgrp(shellfd));
     //     tcsetpgrp(shellfd, getpid());
     // }
 }
 
-void sigtstp_handler(int signo) {
-    tcsetpgrp(shellfd, getpid());
-    printf("Caught a sigstp\n");
-}
+
 
 void sigchld_handler(int signo){
-    int warg = 1;
-    waitpid(-1 , &warg, WNOHANG);
-    if (WIFEXITED(warg)) {
+    // int warg = 1;
+    // waitpid(-1 , &warg, WNOHANG);
+    // if (WIFEXITED(warg)) {
         // Set dirty flag for jobsList
-        jobListDirty = 1;
-        prune();
-    }
+    jobListDirty = 1;
+    //printf("pruning\n");
+    prune();
+    //}
 
     tcsetpgrp(shellfd, shell_pgid);
 }
 
 int main(int argc, char** argv) {
     // Set signal handlers
-    signal(SIGTSTP, SIG_IGN); // We ignore so that SIGTSTP is not propogated to child processes 
+    signal(SIGTSTP, sigtstp_handler); // We ignore so that SIGTSTP is not propogated to child processes 
     signal(SIGCHLD, sigchld_handler);
     signal(SIGTTOU, SIG_IGN); // Initially ignore the SIGTTOU signal handler
 
