@@ -139,13 +139,13 @@ int getargc(char* argv[]) {
     return argc;
 }
 
-void bg(char* argv[]) {
+struct JOB* largestJobFromArgs(char* argv[]) {
     int argc = getargc(argv);
     struct JOB *j = NULL;
     int jobid;
 
     if (!jobList) {
-        return;
+        return NULL;
     }
 
     if (argc == 1) {
@@ -158,23 +158,41 @@ void bg(char* argv[]) {
             }
             curr = curr->next;
         }
-        jobid = max;
+        return j;
     }
-    else {
+    else if (argc == 2) {
         jobid = atoi(argv[1]);
         struct JOB *curr = jobList;
         while (curr) {
             if (curr->jid == jobid) {
-                j = curr;
-                break;
+                return curr;
             }
             curr = curr->next;
         }
     }
 
+    printf("Too many arguments passed to %s.\n", argv[0]);
+    exit(1); 
+}
+
+void bg(char* argv[]) {
+    struct JOB *j = largestJobFromArgs(argv);
+
+    if (!j) return;
+
     // Set shell to foreground if not already
     // tcsetpgrp(shellfd, shell_pgid);
     kill(j->pid, SIGCONT);
+}
+
+void fg(char* argv[]) {
+    struct JOB *j = largestJobFromArgs(argv);
+
+    if (!j) return;
+
+    tcsetpgrp(shellfd, getpgid(j->pid));
+    kill(j->pid, SIGCONT);
+    waitpid(j->pid, NULL, WUNTRACED);
 }
 
 void exitShell() {
@@ -206,7 +224,7 @@ int builtin(char* command, char* argv[]) {
     }
     else if (!strcmp(command, "fg"))
     {
-        //fg(argv);
+        fg(argv);
     }
     else if (!strcmp(command, "jobs"))
     {
