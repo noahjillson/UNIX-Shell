@@ -11,6 +11,7 @@
 #include "./wsh.h"
 
 static struct JOB* jobList;
+static int jobListDirty;
 static int shellfd;
 pid_t shell_pgid;
 
@@ -19,6 +20,14 @@ int nextjid() {
     struct JOB *curr = jobList;
     
     while (curr) {
+        // If jobList has been pruned restart search for jobid
+        if (jobListDirty) {
+            jobListDirty = 0;
+            minUnused = 1;
+            curr = jobList;
+            continue;
+        }
+
         if (minUnused == curr->jid) {
             minUnused++;
             curr = jobList;
@@ -132,15 +141,40 @@ int getargc(char* argv[]) {
 
 void bg(char* argv[]) {
     int argc = getargc(argv);
-    //pid_t fgjob;
+    struct JOB *j = NULL;
+    int jobid;
+
+    if (!jobList) {
+        return;
+    }
 
     if (argc == 1) {
-        //fgjob = tcgetpgrp(0);
-
+        int max = 0;
+        struct JOB *curr = jobList;
+        while (curr) {
+            if (max < curr->jid) {
+                max = curr->jid;
+                j = curr;
+            }
+            curr = curr->next;
+        }
+        jobid = max;
     }
-    //if
+    else {
+        jobid = atoi(argv[1]);
+        struct JOB *curr = jobList;
+        while (curr) {
+            if (curr->jid == jobid) {
+                j = curr;
+                break;
+            }
+            curr = curr->next;
+        }
+    }
 
-    exit(1);
+    // Set shell to foreground if not already
+    // tcsetpgrp(shellfd, shell_pgid);
+    kill(j->pid, SIGCONT);
 }
 
 void exitShell() {
@@ -168,7 +202,7 @@ int builtin(char* command, char* argv[]) {
     }
     else if (!strcmp(command, "bg"))
     {
-        //bg(argv);
+        bg(argv);
     }
     else if (!strcmp(command, "fg"))
     {
@@ -299,10 +333,11 @@ int execute(char* command) {
             // Retrun shell to foreground
             tcsetpgrp(shellfd, shell_pgid);
         }
-        else {
-            // If job is run as background add extry to linked list
-            addjob(isParent, argv);
-        }
+        // else {
+        //     // If job is run as background add extry to linked list
+            
+        // }
+        addjob(isParent, argv);
     }
     else {
         // Set pgid of child to child pid (Done in parent and child to avoid race condition)
@@ -319,6 +354,9 @@ int execute(char* command) {
                 exit(1);
             }
         }
+
+        // Set signal handler to default so that SIGTSTP is caught
+        signal(SIGTSTP, SIG_DFL);
 
         // or cmdpath
         if (-1 == execvp(argv[0], argv)) {
@@ -367,7 +405,7 @@ int listen(SHELL_MODE mode) {
         if ('\n' == line[strlen(line)-1]) {
             line[strlen(line)-1] = '\0';
         }
-        // printjobs();
+        printjobs();
         //execute line as a command and arguments
         execute(line);
         prompt(mode);
@@ -385,14 +423,21 @@ void sigtou_handler(int signo) {
     //     tcsetpgrp(shellfd, getpid());
     // }
 }
+
 void sigtstp_handler(int signo) {
     tcsetpgrp(shellfd, getpid());
     printf("Caught a sigstp\n");
 }
 
 void sigchld_handler(int signo){
-    printf("CAUGHT A SIGCHLD TRAP.\n");
-    prune();
+    int warg = 1;
+    waitpid(-1 , &warg, WNOHANG);
+    if (WIFEXITED(warg)) {
+        // Set dirty flag for jobsList
+        jobListDirty = 1;
+        prune();
+    }
+
     tcsetpgrp(shellfd, shell_pgid);
 }
 
@@ -404,6 +449,7 @@ int main(int argc, char** argv) {
 
     // Linked list of jobs started from the shell
     jobList = NULL;
+    jobListDirty = 0;
 
     // Get name of the controlling terminal
     char *shellname = ttyname(STDIN_FILENO);
