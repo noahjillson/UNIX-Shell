@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -Wall -Werror -pedantic -std=gnu18
 LOGIN = jillson
 SUBMITPATH = ~cs537-1/handin/$(LOGIN)/P3
-SUBMITFILE = $(login).tar.gz 
+SUBMITFILE = $(LOGIN).tar.gz 
 
 all:
 	make wsh
