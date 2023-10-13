@@ -493,6 +493,7 @@ int execute(char *command) {
     }
 
     pid_t firstCommandPid = -1;
+    int pipefd[2][2] = {{STDIN_FILENO, STDOUT_FILENO}, {STDIN_FILENO, STDOUT_FILENO}};
     for (int i = 0; i < numcommands; i++) {
         // Check if command is internally handled
         if (builtin(commands[i][0], commands[i])) {
@@ -523,11 +524,17 @@ int execute(char *command) {
         }
 
 
-        int pipefd[2];
         //int cwt = pipefd[1];
-        if (numcommands > 1){ //) && currcommand > 1 && currcommand < numcommands) {
-            pipe(pipefd);
+        //printf("PRE : (0,0)=%d, (0,1)=%d, (1,0)=%d, (1,1)=%d\n", pipefd[0][0], pipefd[0][1], pipefd[1][0], pipefd[1][1]);
+        if (i >= 1) {
+            pipefd[0][0] = pipefd[1][0];
+            pipefd[0][1] = pipefd[1][1];
         }
+        if (numcommands > 1){ //) && currcommand > 1 && currcommand < numcommands) {
+            pipe(pipefd[1]);
+        }
+
+        //printf("POST: (0,0)=%d, (0,1)=%d, (1,0)=%d, (1,1)=%d\n", pipefd[0][0], pipefd[0][1], pipefd[1][0], pipefd[1][1]);
         // Execute command
         int isParent;
         isParent = fork();
@@ -545,22 +552,33 @@ int execute(char *command) {
             // for (; k < 100; k++);
             //printf("%d\n", k);
             if (numcommands > 1) {
-                if (i == numcommands-1) {
-                    if (-1 == dup2(pipefd[0], STDIN_FILENO)) {
-                        printf("DUP2ERR\n");
-                    }
-                    // char bufr[256];
-                    // read(STDIN_FILENO, bufr, 256);
-                    // printf("-------%s------\n", bufr);
+                // if (i == numcommands-1) {
+                //     // if (-1 == dup2(pipefd[0], STDIN_FILENO)) {
+                //     //     printf("DUP2ERR\n");
+                //     // }
+                //     // char bufr[256];
+                //     // read(STDIN_FILENO, bufr, 256);
+                //     // printf("-------%s------\n", bufr);
+
+                // }
+                // else {
+                //     // if (-1 == dup2(pipefd[0], STDIN_FILENO)) {
+                //     //     printf("DUP2ERR\n");
+                //     // }
+                //     // char bufr[256];
+                //     // read(STDIN_FILENO, bufr, 256);
+                //     // printf("-------%s@@@@@@@@\n", bufr);
+                // }
+                if (i != 0) {
+                    close(pipefd[0][0]);
                 }
-                else {
-                    if (-1 == dup2(pipefd[0], STDIN_FILENO)) {
-                        printf("DUP2ERR\n");
-                    }
-                    // char bufr[256];
-                    // read(STDIN_FILENO, bufr, 256);
-                    // printf("-------%s@@@@@@@@\n", bufr);
+                if (i < numcommands - 1) {
+                    close(pipefd[1][1]);
                 }
+                //printf("i: %d, cmd: %s, read: %d, write: %d\n", i, commands[i][0], pipefd[0][0], pipefd[1][1]);
+                // pipefd[0][0] = pipefd[1][0];
+                // //printf("00 = %d\n", pipefd[0][0]);
+                // pipefd[0][1] = pipefd[1][1];
             }
 
 
@@ -585,15 +603,23 @@ int execute(char *command) {
             }
         }
         else {
-            //write(STDERR_FILENO, "\n", 1);
-            //printf("CHILD STARTED\n");
             if (numcommands > 1) {
-                if (i == numcommands - 1) {
-                    //dup2(stdfd[1], STDOUT_FILENO);
+                // if (i == numcommands - 1) {
+                //     //dup2(stdfd[1], STDOUT_FILENO);
+                // }
+                // else {               
+                //     dup2(pipefd[1], STDOUT_FILENO);
+                // }
+                if (i > 0) {
+                    dup2(pipefd[0][0], STDIN_FILENO);
+                    close(pipefd[0][0]);
                 }
-                else {               
-                    dup2(pipefd[1], STDOUT_FILENO);
+                if (i < numcommands - 1) {
+                    dup2(pipefd[1][1], STDOUT_FILENO);
+                    close(pipefd[1][1]);
                 }
+                // close(pipefd[0][1]);
+                // close(pipefd[1][0]);
             }
 
             if (firstCommandPid == -1) {
@@ -655,11 +681,11 @@ int execute(char *command) {
 void prompt(SHELL_MODE mode) {
     if (INTERACTIVE == mode) {
         printf("wsh> ");
-        fflush(stdout);
-        if (fflush(stdout)) {
-            printf("Failed to flush output buffer\n.");
-            exit(1);
-        }
+        fflush(stdin);
+        // if (fflush(stdout)) {
+        //     printf("Failed to flush output buffer\n.");
+        //     exit(1);
+        // }
     }
 }
 
