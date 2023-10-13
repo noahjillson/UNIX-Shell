@@ -11,7 +11,7 @@ SHELL_MODE BATCH = 1;
 // Job structre for keeping track of the processes started from shell
 struct JOB {
     pid_t pgid;
-    pid_t pid_list;
+    pid_t *pid_list;
     int jid;
     char *pname;
     char *pargv[MAX_ARG_CNT];
