@@ -1,8 +1,7 @@
 CC = gcc
-CFLAGS = -Wall -Werror -pedantic -std=gnu18
-LOGIN = jillson
-SUBMITPATH = ~cs537-1/handin/$(LOGIN)/P3
-SUBMITFILE = $(LOGIN).tar.gz 
+CFLAGS = -Wall -g -Werror -pedantic -std=gnu18
+PROJ = wsh
+PACKNAME = $(PROJ).tar.gz 
 
 all:
 	make wsh
@@ -14,7 +13,7 @@ run: wsh
 	./$<
 
 pack: wsh.c wsh.h Makefile README.md
-	tar -czf $(SUBMITFILE) $^
+	tar -czf $(PACKNAME) $^
 
-submit: pack
-	cp $(SUBMITFILE) $(SUBMITPATH)
+unpack: $(PACKNAME)
+	tar -xzf $<
