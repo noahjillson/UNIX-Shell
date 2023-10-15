@@ -1,18 +1,18 @@
 CC = gcc
 CFLAGS = -Wall -g -Werror -pedantic -std=gnu18
-PROJ = wsh
+PROJ = ush
 PACKNAME = $(PROJ).tar.gz 
 
 all:
-	make wsh
+	make ush
 
-wsh: wsh.c wsh.h
+ush: ush.c ush.h
 	$(CC) -o $@ $(CFLAGS) $<
 
-run: wsh
+run: ush
 	./$<
 
-pack: wsh.c wsh.h Makefile README.md
+pack: ush.c ush.h Makefile README.md
 	tar -czf $(PACKNAME) $^
 
 unpack: $(PACKNAME)

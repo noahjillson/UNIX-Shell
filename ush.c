@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <signal.h>
-#include "./wsh.h"
+#include "./ush.h"
 
 static struct JOB* jobList;
 static int jobListDirty;
@@ -680,7 +680,7 @@ int execute(char *command) {
 
 void prompt(SHELL_MODE mode) {
     if (INTERACTIVE == mode) {
-        printf("wsh> ");
+        printf("ush> ");
         fflush(stdin);
         // if (fflush(stdout)) {
         //     printf("Failed to flush output buffer\n.");
