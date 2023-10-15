@@ -2,7 +2,7 @@
 A basic UNIX shell written in C. The shell supports basic job control, pipes, and signal handling (SIGTSTP [ctrl+z], SIGINT [ctrl+c], and SIGQUIT [ctrl+d]).
 
 ## Building
-Compilation and execution of the shell are handled within the `Makefile`. The shell can be compiled using either `make` or `make wsh`, and the entire shell can be launched using `make run`.
+Compilation and execution of the shell are handled within the `Makefile`. The shell can be compiled using either `make` or `make ush`, and the entire shell can be launched using `make run`.
 
 Additionally, the source can be packed into a tar using `make pack`.
 
@@ -10,17 +10,17 @@ Additionally, the source can be packed into a tar using `make pack`.
 ### Job Control:
 Jobs can be run in the foreground and background. By default, job execution occurs in the foreground processing group. An ampersand (`&`) can be appended to the end of a command to immediately execute the job in the background. Spacing for the ampersand does not matter as long as it is the final character of the command. For example both of the below commands result in the same execution of the job in the background.
 ```
-wsh> cat example.txt | tail -n 10 &
+ush> cat example.txt | tail -n 10 &
 ```
 ```
-wsh> cat example.txt | tail -n 10&
+ush> cat example.txt | tail -n 10&
 ```
 #### 1) jobs (command)
-All jobs executed with wsh as their controlling terminal can be monitored with the `jobs` command. The output of this command is formatted as follows:
+All jobs executed with ush as their controlling terminal can be monitored with the `jobs` command. The output of this command is formatted as follows:
 ```
 <job id>: <program 1 name> <arg1> … <argN> | <program 2 name> <arg1> … <argN> | … [&]
 ```
-The Job ID of a job is unique to the wsh shell and is independent of the process and process group ids. A job will be assigned the smallest available Job ID at the time of execution starting from 1. Once a job ID is in use, it cannot be changed or reused until the current job assigned that ID has been terminated. Jobs will maintain their Job ID indefinetly upon suspension.
+The Job ID of a job is unique to the ush shell and is independent of the process and process group ids. A job will be assigned the smallest available Job ID at the time of execution starting from 1. Once a job ID is in use, it cannot be changed or reused until the current job assigned that ID has been terminated. Jobs will maintain their Job ID indefinetly upon suspension.
 #### 2) fg (command)
 Jobs can be brought into the foreground using the fg command. This command takes either 0 or 1 argument(s). When called with 0 arguments, `fg` will bring the background job with the largest Job ID into the foreground. When called with 1 argument, the argument must be valid Job ID specifying the Job that is to be foregrounded. If the job is currently suspended, `fg` will send a SIGCONT to all processes attached to the job to continue its execution.
 
@@ -30,7 +30,7 @@ Job execution can be continued as a background job through the use of `bg`. Simi
 ### Pipes
 This shell supports the standard in and standard out redirection through the use of the pipe operator `|`. Thus the program on the left side of the pipe operator will have all of its output sent to the standard out file descriptor redirected to the standard in file descriptor of the program on the right side of the operator. An example of this is the following:
 ```
-wsh> cat example.txt | tail -n 10 | sort -o sorted.txt
+ush> cat example.txt | tail -n 10 | sort -o sorted.txt
 ```
 
 In fashion similar to the `&` operator, spacing on eitherside of the pipe operator does not affect the execution of the command. 
